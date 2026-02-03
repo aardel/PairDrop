@@ -186,6 +186,18 @@ class ServerConnection {
             case 'public-room-left':
                 Events.fire('public-room-left');
                 break;
+            case 'printers':
+                Events.fire('printers', msg.printers);
+                break;
+            case 'printer-joined':
+                Events.fire('printer-joined', msg.printer);
+                break;
+            case 'printer-left':
+                Events.fire('printer-left', msg.printerId);
+                break;
+            case 'printer-updated':
+                Events.fire('printer-updated', msg.printer);
+                break;
             case 'request':
             case 'header':
             case 'partition':

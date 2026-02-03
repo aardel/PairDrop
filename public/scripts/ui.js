@@ -17,6 +17,7 @@ class PeersUI {
         this.$shareModeEditBtn = $$('.shr-panel .edit-btn');
 
         this.peers = {};
+        this.printers = {};
 
         this.shareMode = {
             active: false,
@@ -31,6 +32,12 @@ class PeersUI {
         Events.on('peer-disconnected', e => this._onPeerDisconnected(e.detail));
         Events.on('peers', e => this._onPeers(e.detail));
         Events.on('set-progress', e => this._onSetProgress(e.detail));
+
+        // Printer events
+        Events.on('printers', e => this._onPrinters(e));
+        Events.on('printer-joined', e => this._onPrinterJoined(e));
+        Events.on('printer-left', e => this._onPrinterLeft(e));
+        Events.on('printer-updated', e => this._onPrinterUpdated(e));
 
         Events.on('drop', e => this._onDrop(e));
         Events.on('keydown', e => this._onKeyDown(e));
@@ -402,6 +409,37 @@ class PeersUI {
             });
         }
     }
+
+    // Printer event handlers
+    _onPrinters(printers) {
+        if (!printers || printers.length === 0) return;
+        printers.forEach(printer => this._onPrinterJoined(printer));
+    }
+
+    _onPrinterJoined(printer) {
+        if (this.printers[printer.id]) return; // Printer already exists
+        
+        this.printers[printer.id] = printer;
+        new PrinterUI(printer);
+        this._evaluateOverflowingPeers();
+    }
+
+    _onPrinterLeft(printerId) {
+        const $printer = $(`printer-${printerId}`);
+        if (!$printer) return;
+        
+        $printer.remove();
+        delete this.printers[printerId];
+        this._evaluateOverflowingPeers();
+    }
+
+    _onPrinterUpdated(printer) {
+        const $printer = $(`printer-${printer.id}`);
+        if (!$printer || !$printer.ui) return;
+        
+        this.printers[printer.id] = printer;
+        $printer.ui.update(printer);
+    }
 }
 
 class PeerUI {
@@ -704,6 +742,132 @@ class PeerUI {
             });
         }
         this._touchTimer = null;
+    }
+}
+
+class PrinterUI {
+    constructor(printer) {
+        this.$xPeers = $$('x-peers');
+        this._printer = printer;
+        this._initDom();
+        this.$xPeers.appendChild(this.$el);
+        Events.fire('peer-added'); // Reuse peer-added event to trigger overflow evaluation
+    }
+
+    _initDom() {
+        this.$el = document.createElement('x-printer');
+        this.$el.id = `printer-${this._printer.id}`;
+        this.$el.ui = this;
+        this.$el.classList.add('center', 'printer');
+        
+        this.html();
+        this._bindListeners();
+    }
+
+    html() {
+        const statusClass = this._printer.online ? 'online' : 'offline';
+        const statusText = this._getStatusText();
+        
+        this.$el.innerHTML = `
+            <label class="column center pointer">
+                <x-icon>
+                    <div class="icon-wrapper printer-icon" shadow="1">
+                        <svg class="icon"><use xlink:href="#printer-icon"/></svg>
+                    </div>
+                </x-icon>
+                <div class="progress">
+                  <div class="circle"></div>
+                  <div class="circle right"></div>
+                </div>
+                <div class="device-descriptor">
+                    <div class="name font-subheading">${this._printer.name}</div>
+                    <div class="status font-body2 ${statusClass}">${statusText}</div>
+                </div>
+            </label>`;
+        
+        this.$label = this.$el.querySelector('label');
+    }
+
+    _getStatusText() {
+        if (!this._printer.online) return 'Offline';
+        
+        switch (this._printer.status) {
+            case 'idle':
+                return 'Ready';
+            case 'printing':
+                return 'Printing...';
+            case 'stopped':
+                return 'Stopped';
+            default:
+                return this._printer.status || 'Ready';
+        }
+    }
+
+    _bindListeners() {
+        this.$label.addEventListener('drop', e => this._onDrop(e));
+        this.$label.addEventListener('dragover', e => this._onDragOver(e));
+        this.$label.addEventListener('dragleave', _ => this._onDragEnd());
+        this.$label.addEventListener('dragend', _ => this._onDragEnd());
+        
+        // Click to show print options
+        this.$label.addEventListener('click', _ => {
+            Events.fire('printer-clicked', {
+                printerId: this._printer.id,
+                printerName: this._printer.name
+            });
+        });
+    }
+
+    _onDragOver(e) {
+        if (!this._printer.online) return;
+        e.preventDefault();
+        this.$el.setAttribute('drop', '1');
+    }
+
+    _onDragEnd() {
+        this.$el.removeAttribute('drop');
+    }
+
+    _onDrop(e) {
+        e.preventDefault();
+        this._onDragEnd();
+        
+        if (!this._printer.online) {
+            Events.fire('notify-user', 'Printer is offline');
+            return;
+        }
+
+        const files = e.dataTransfer.files;
+        if (files.length === 0) return;
+
+        // Handle print job
+        Events.fire('print-files', {
+            printerId: this._printer.id,
+            printerName: this._printer.name,
+            files: Array.from(files)
+        });
+    }
+
+    setProgress(progress, status) {
+        if (progress > 0) {
+            this.$el.setAttribute('status', status || 'printing');
+            const $progress = this.$el.querySelector('.progress');
+            if ($progress) {
+                const degrees = `rotate(${360 * progress}deg)`;
+                $progress.style.setProperty('--progress', degrees);
+            }
+        } else {
+            this.$el.removeAttribute('status');
+        }
+    }
+
+    update(printer) {
+        this._printer = printer;
+        const $status = this.$el.querySelector('.status');
+        if ($status) {
+            $status.textContent = this._getStatusText();
+            $status.className = `status font-body2 ${printer.online ? 'online' : 'offline'}`;
+        }
     }
 }
 
@@ -2398,6 +2562,92 @@ class Base64Dialog extends Dialog {
         this.$fallbackTextarea.setAttribute('disabled', true);
         this.$fallbackTextarea.blur();
         super.hide();
+    }
+}
+
+class PrintDialog extends Dialog {
+    constructor() {
+        super('print-dialog');
+        this.$printerName = $('print-printer-name');
+        this.$fileCount = $('print-file-count');
+        this.$copies = $('print-copies');
+        this.$confirmBtn = $('print-confirm-btn');
+        
+        Events.on('print-files', e => this._onPrintFiles(e));
+        Events.on('printer-clicked', e => this._onPrinterClicked(e));
+    }
+
+    _onPrintFiles(e) {
+        this._printData = {
+            printerId: e.printerId,
+            printerName: e.printerName,
+            files: e.files
+        };
+        
+        this._showDialog();
+    }
+
+    _onPrinterClicked(e) {
+        // Open file dialog
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.onchange = () => {
+            if (input.files.length > 0) {
+                this._printData = {
+                    printerId: e.printerId,
+                    printerName: e.printerName,
+                    files: Array.from(input.files)
+                };
+                this._showDialog();
+            }
+        };
+        input.click();
+    }
+
+    _showDialog() {
+        this.$printerName.textContent = this._printData.printerName;
+        this.$fileCount.textContent = `${this._printData.files.length} file(s)`;
+        this.$copies.value = 1;
+        
+        this.$confirmBtn.onclick = () => this._onConfirm();
+        this.show();
+    }
+
+    async _onConfirm() {
+        const copies = parseInt(this.$copies.value) || 1;
+        
+        this.hide();
+        
+        // Upload and print each file
+        for (const file of this._printData.files) {
+            try {
+                await this._printFile(file, copies);
+                Events.fire('notify-user', `Printing ${file.name}...`);
+            } catch (error) {
+                console.error('Print error:', error);
+                Events.fire('notify-user', `Failed to print ${file.name}: ${error.message}`);
+            }
+        }
+    }
+
+    async _printFile(file, copies) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('printerId', this._printData.printerId);
+        formData.append('copies', copies);
+        
+        const response = await fetch('/api/print', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Print failed');
+        }
+        
+        return await response.json();
     }
 }
 

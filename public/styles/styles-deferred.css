@@ -268,6 +268,105 @@ x-peer[drop] x-icon {
     transform: scale(1.1);
 }
 
+/* Printer Styles */
+
+x-printer {
+    padding: 8px;
+    align-content: start;
+    flex-wrap: wrap;
+}
+
+x-printer label {
+    width: var(--peer-width);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+    position: relative;
+}
+
+x-printer x-icon {
+    --icon-size: 40px;
+    margin-bottom: 4px;
+    transition: transform 150ms;
+    will-change: transform;
+    display: flex;
+    flex-direction: column;
+}
+
+x-printer .icon-wrapper {
+    width: var(--icon-size);
+    padding: 12px;
+    border-radius: 50%;
+    background: #607d8b;
+    background-image: linear-gradient(45deg, #607d8b 40%, #90a4ae 100%);
+    color: white;
+    display: flex;
+}
+
+x-printer .printer-icon {
+    --accent-color: #607d8b;
+}
+
+x-printer:hover x-icon,
+x-printer:focus x-icon {
+    transform: scale(1.05);
+}
+
+x-printer[drop] x-icon {
+    transform: scale(1.1);
+}
+
+x-printer[status] x-icon {
+    transform: scale(1.0);
+}
+
+x-printer .progress {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 6px solid transparent;
+    border-top-color: var(--primary-color);
+    border-right-color: var(--primary-color);
+    position: absolute;
+    top: -6px;
+    left: calc(50% - 46px);
+    transform: var(--progress);
+    transition: all 300ms ease-out;
+    display: none;
+}
+
+x-printer[status] .progress {
+    display: block;
+}
+
+x-printer .status {
+    opacity: 0.7;
+    white-space: nowrap;
+}
+
+x-printer .status.online {
+    color: #4caf50;
+}
+
+x-printer .status.offline {
+    color: #f44336;
+}
+
+x-printer:not([status]) .status {
+    display: block;
+}
+
+x-printer[status] .device-name {
+    display: none;
+}
+
+x-printer[status] {
+    pointer-events: none;
+}
+
+x-printer x-icon {
+    animation: pop 600ms ease-out 1;
+}
+
 /* Checkboxes as slider */
 
 .switch {
