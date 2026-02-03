@@ -61,6 +61,9 @@ docker run -d -p 3000:3000 -e PRINTER_DISCOVERY=true pairdrop
 
 # Node.js
 PRINTER_DISCOVERY=true npm start
+
+# Optional: Set maximum file size for printing (default: 100MB)
+PRINT_MAX_FILE_SIZE=52428800 npm start  # 50MB
 ```
 
 #### Requirements
@@ -68,6 +71,14 @@ PRINTER_DISCOVERY=true npm start
 - Network printers must support IPP (Internet Printing Protocol) or CUPS
 - Printers must be discoverable via mDNS/Bonjour on the network
 - The server must be able to access the network where printers are located
+
+#### How It Works
+
+1. **Discovery**: When enabled, PairDrop automatically scans the network for IPP-compatible printers using mDNS/Bonjour
+2. **Display**: Discovered printers appear as printer icons alongside peer devices
+3. **Print**: Drag and drop files onto printer icons or click to select files
+4. **Configuration**: Choose print options like number of copies before printing
+5. **Status**: Real-time updates show printer availability and job status
 
 ## Differences to the [Snapdrop](https://github.com/RobinLinus/snapdrop) it is based on
 <details><summary>View all differences</summary>
