@@ -77,7 +77,7 @@ export default class PairDropWsServer {
     }
 
     _sendPrinters(peer) {
-        const printers = this._printerService.getPrinters().map(p => this._sanitizePrinterInfo(p));
+        const printers = this._printerService.getOnlinePrinters().map(p => this._sanitizePrinterInfo(p));
         this._send(peer, {
             type: 'printers',
             printers: printers

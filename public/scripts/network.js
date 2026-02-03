@@ -187,16 +187,16 @@ class ServerConnection {
                 Events.fire('public-room-left');
                 break;
             case 'printers':
-                Events.fire('printers', msg.printers);
+                Events.fire('printers', { printers: msg.printers });
                 break;
             case 'printer-joined':
-                Events.fire('printer-joined', msg.printer);
+                Events.fire('printer-joined', { printer: msg.printer });
                 break;
             case 'printer-left':
-                Events.fire('printer-left', msg.printerId);
+                Events.fire('printer-left', { printerId: msg.printerId });
                 break;
             case 'printer-updated':
-                Events.fire('printer-updated', msg.printer);
+                Events.fire('printer-updated', { printer: msg.printer });
                 break;
             case 'request':
             case 'header':

@@ -16,10 +16,11 @@ export default class PairDropServer {
 
         // Setup multer for file uploads (in-memory storage)
         const storage = multer.memoryStorage();
+        const maxFileSize = parseInt(process.env.PRINT_MAX_FILE_SIZE) || (100 * 1024 * 1024); // Default 100MB
         const upload = multer({
             storage: storage,
             limits: {
-                fileSize: 100 * 1024 * 1024 // 100MB limit
+                fileSize: maxFileSize
             }
         });
 
@@ -76,7 +77,7 @@ export default class PairDropServer {
             if (!this._printerService.isEnabled()) {
                 return res.status(503).json({ error: 'Printer service is not enabled' });
             }
-            const printers = this._printerService.getPrinters();
+            const printers = this._printerService.getOnlinePrinters();
             res.json({ printers });
         });
 

@@ -29,12 +29,45 @@ File sharing on your local network that works on all platforms.
   - Join temporary public rooms to transfer files easily over the Internet.
 - Web-app 
   - Works on all devices with a modern web-browser.
+- **Printer Support (New!)**
+  - Automatically discovers network printers (IPP/CUPS compatible)
+  - Drag-and-drop files onto printer icons to print
+  - Print PDFs, images, and documents directly from your browser
+  - Monitor printer status (online/offline, ready/busy)
  
 Send a file from your phone to your laptop?
 <br>Share photos in original quality with friends using Android and iOS?
 <br>Share private files peer-to-peer between Linux systems?
+<br>**Print documents directly from any device on your network?**
 
 <img src="docs/pairdrop_screenshot_mobile.gif" alt="Screenshot GIF showing PairDrop in use" style="width: 300px">
+
+### Printer Discovery and Printing
+
+PairDrop now includes automatic printer detection and drag-and-drop printing functionality:
+
+- **Automatic Discovery**: Network printers (IPP/CUPS compatible) are automatically detected using mDNS/Bonjour
+- **Drag-and-Drop Printing**: Simply drag files onto printer icons to print them
+- **Status Indicators**: Real-time printer status (online/offline, ready/busy)
+- **File Support**: Supports PDF, images (PNG, JPG, etc.), and other common document formats
+
+#### Enabling Printer Support
+
+To enable printer discovery, set the `PRINTER_DISCOVERY` environment variable to `true`:
+
+```bash
+# Docker
+docker run -d -p 3000:3000 -e PRINTER_DISCOVERY=true pairdrop
+
+# Node.js
+PRINTER_DISCOVERY=true npm start
+```
+
+#### Requirements
+
+- Network printers must support IPP (Internet Printing Protocol) or CUPS
+- Printers must be discoverable via mDNS/Bonjour on the network
+- The server must be able to access the network where printers are located
 
 ## Differences to the [Snapdrop](https://github.com/RobinLinus/snapdrop) it is based on
 <details><summary>View all differences</summary>

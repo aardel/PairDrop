@@ -27,7 +27,7 @@ class PeersUI {
         }
 
         Events.on('peer-joined', e => this._onPeerJoined(e.detail));
-        Events.on('peer-added', _ => this._evaluateOverflowingPeers());
+        Events.on('content-added', _ => this._evaluateOverflowingPeers());
         Events.on('peer-connected', e => this._onPeerConnected(e.detail.peerId, e.detail.connectionHash));
         Events.on('peer-disconnected', e => this._onPeerDisconnected(e.detail));
         Events.on('peers', e => this._onPeers(e.detail));
@@ -411,12 +411,14 @@ class PeersUI {
     }
 
     // Printer event handlers
-    _onPrinters(printers) {
+    _onPrinters(e) {
+        const printers = e.printers;
         if (!printers || printers.length === 0) return;
-        printers.forEach(printer => this._onPrinterJoined(printer));
+        printers.forEach(printer => this._onPrinterJoined({ printer }));
     }
 
-    _onPrinterJoined(printer) {
+    _onPrinterJoined(e) {
+        const printer = e.printer;
         if (this.printers[printer.id]) return; // Printer already exists
         
         this.printers[printer.id] = printer;
@@ -424,7 +426,8 @@ class PeersUI {
         this._evaluateOverflowingPeers();
     }
 
-    _onPrinterLeft(printerId) {
+    _onPrinterLeft(e) {
+        const printerId = e.printerId;
         const $printer = $(`printer-${printerId}`);
         if (!$printer) return;
         
@@ -433,7 +436,8 @@ class PeersUI {
         this._evaluateOverflowingPeers();
     }
 
-    _onPrinterUpdated(printer) {
+    _onPrinterUpdated(e) {
+        const printer = e.printer;
         const $printer = $(`printer-${printer.id}`);
         if (!$printer || !$printer.ui) return;
         
@@ -458,7 +462,7 @@ class PeerUI {
         this._initDom();
 
         this.$xPeers.appendChild(this.$el);
-        Events.fire('peer-added');
+        Events.fire('content-added');
 
         // ShareMode
         Events.on('share-mode-changed', e => this._onShareModeChanged(e.detail.active, e.detail.descriptor));
@@ -751,7 +755,7 @@ class PrinterUI {
         this._printer = printer;
         this._initDom();
         this.$xPeers.appendChild(this.$el);
-        Events.fire('peer-added'); // Reuse peer-added event to trigger overflow evaluation
+        Events.fire('content-added');
     }
 
     _initDom() {

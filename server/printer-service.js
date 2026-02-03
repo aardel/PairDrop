@@ -3,6 +3,11 @@ import ipp from '@sealsystems/ipp';
 import { EventEmitter } from 'events';
 import crypto from 'crypto';
 
+// IPP Printer State Constants
+const PRINTER_STATE_IDLE = 3;
+const PRINTER_STATE_PRINTING = 4;
+const PRINTER_STATE_STOPPED = 5;
+
 /**
  * PrinterService - Discovers network printers and manages print jobs
  * Emits events: 'printer-added', 'printer-removed', 'printer-updated'
@@ -130,11 +135,11 @@ export default class PrinterService extends EventEmitter {
                         };
 
                         // Update printer status based on state
-                        if (printer.capabilities.printerState === 3) {
+                        if (printer.capabilities.printerState === PRINTER_STATE_IDLE) {
                             printer.status = 'idle';
-                        } else if (printer.capabilities.printerState === 4) {
+                        } else if (printer.capabilities.printerState === PRINTER_STATE_PRINTING) {
                             printer.status = 'printing';
-                        } else if (printer.capabilities.printerState === 5) {
+                        } else if (printer.capabilities.printerState === PRINTER_STATE_STOPPED) {
                             printer.status = 'stopped';
                         }
 
@@ -244,6 +249,10 @@ export default class PrinterService extends EventEmitter {
     }
 
     getPrinters() {
+        return Array.from(this._printers.values());
+    }
+
+    getOnlinePrinters() {
         return Array.from(this._printers.values()).filter(p => p.online);
     }
 
