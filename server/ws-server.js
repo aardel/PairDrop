@@ -6,7 +6,7 @@ import {hasher, randomizer} from "./helper.js";
 
 export default class PairDropWsServer {
 
-    constructor(server, conf) {
+    constructor(server, conf, printerService) {
         this._conf = conf
 
         this._rooms = {}; // { roomId: peers[] }
@@ -16,6 +16,10 @@ export default class PairDropWsServer {
 
         this._wss = new WebSocketServer({ server });
         this._wss.on('connection', (socket, request) => this._onConnection(new Peer(socket, request, conf)));
+
+        // Use provided printer service
+        this._printerService = printerService;
+        this._setupPrinterEvents();
     }
 
     _onConnection(peer) {
@@ -40,6 +44,63 @@ export default class PairDropWsServer {
             peerId: peer.id,
             peerIdHash: hasher.hashCodeSalted(peer.id)
         });
+
+        // send available printers
+        if (this._printerService.isEnabled()) {
+            this._sendPrinters(peer);
+        }
+    }
+
+    _setupPrinterEvents() {
+        if (!this._printerService.isEnabled()) return;
+
+        this._printerService.on('printer-added', (printer) => {
+            this._broadcastToAll({
+                type: 'printer-joined',
+                printer: this._sanitizePrinterInfo(printer)
+            });
+        });
+
+        this._printerService.on('printer-removed', (printer) => {
+            this._broadcastToAll({
+                type: 'printer-left',
+                printerId: printer.id
+            });
+        });
+
+        this._printerService.on('printer-updated', (printer) => {
+            this._broadcastToAll({
+                type: 'printer-updated',
+                printer: this._sanitizePrinterInfo(printer)
+            });
+        });
+    }
+
+    _sendPrinters(peer) {
+        const printers = this._printerService.getPrinters().map(p => this._sanitizePrinterInfo(p));
+        this._send(peer, {
+            type: 'printers',
+            printers: printers
+        });
+    }
+
+    _sanitizePrinterInfo(printer) {
+        return {
+            id: printer.id,
+            name: printer.name,
+            status: printer.status,
+            online: printer.online,
+            capabilities: printer.capabilities
+        };
+    }
+
+    _broadcastToAll(message) {
+        for (const roomId in this._rooms) {
+            for (const peerId in this._rooms[roomId]) {
+                const peer = this._rooms[roomId][peerId];
+                this._send(peer, message);
+            }
+        }
     }
 
     _onMessage(sender, message) {
