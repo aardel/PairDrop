@@ -3,11 +3,26 @@ import RateLimit from "express-rate-limit";
 import {fileURLToPath} from "url";
 import path, {dirname} from "path";
 import http from "http";
+import multer from "multer";
+import PrinterService from "./printer-service.js";
 
 export default class PairDropServer {
 
     constructor(conf) {
         const app = express();
+
+        // Initialize printer service
+        this._printerService = new PrinterService(conf);
+
+        // Setup multer for file uploads (in-memory storage)
+        const storage = multer.memoryStorage();
+        const maxFileSize = parseInt(process.env.PRINT_MAX_FILE_SIZE) || (100 * 1024 * 1024); // Default 100MB
+        const upload = multer({
+            storage: storage,
+            limits: {
+                fileSize: maxFileSize
+            }
+        });
 
         if (conf.rateLimit) {
             const limiter = RateLimit({
@@ -34,6 +49,9 @@ export default class PairDropServer {
 
         const publicPathAbs = path.join(__dirname, '../public');
         app.use(express.static(publicPathAbs));
+        
+        // Add JSON body parser for printer endpoints
+        app.use(express.json());
 
         if (conf.debugMode && conf.rateLimit) {
             console.debug("\n");
@@ -52,6 +70,55 @@ export default class PairDropServer {
                 signalingServer: conf.signalingServer,
                 buttons: conf.buttons
             });
+        });
+
+        // Printer API endpoints
+        app.get('/api/printers', (req, res) => {
+            if (!this._printerService.isEnabled()) {
+                return res.status(503).json({ error: 'Printer service is not enabled' });
+            }
+            const printers = this._printerService.getOnlinePrinters();
+            res.json({ printers });
+        });
+
+        app.post('/api/print', upload.single('file'), async (req, res) => {
+            try {
+                if (!this._printerService.isEnabled()) {
+                    return res.status(503).json({ error: 'Printer service is not enabled' });
+                }
+
+                const { printerId } = req.body;
+                const file = req.file;
+
+                if (!printerId || !file) {
+                    return res.status(400).json({ error: 'Missing printerId or file' });
+                }
+
+                const printer = this._printerService.getPrinter(printerId);
+                if (!printer) {
+                    return res.status(404).json({ error: 'Printer not found' });
+                }
+
+                // Parse print options
+                const options = {
+                    copies: parseInt(req.body.copies) || 1,
+                    sides: req.body.sides || 'one-sided',
+                    colorMode: req.body.colorMode || 'auto',
+                    mimeType: file.mimetype
+                };
+
+                const result = await this._printerService.submitPrintJob(
+                    printerId,
+                    file.buffer,
+                    file.originalname,
+                    options
+                );
+
+                res.json(result);
+            } catch (error) {
+                console.error('Print job error:', error);
+                res.status(500).json({ error: error.message });
+            }
         });
 
         app.use((req, res) => {
@@ -76,6 +143,7 @@ export default class PairDropServer {
             }
         });
 
-        this.server = server
+        this.server = server;
+        this.printerService = this._printerService;
     }
 }

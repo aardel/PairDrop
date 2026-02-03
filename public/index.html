@@ -642,6 +642,40 @@
             </x-paper>
         </x-background>
     </x-dialog>
+    <!-- Print Dialog -->
+    <x-dialog id="print-dialog">
+        <x-background class="full center">
+            <x-paper shadow="2">
+                <div class="row center p-2">
+                    <h2 class="dialog-title">Print Files</h2>
+                </div>
+                <div class="column p-2">
+                    <div class="row">
+                        <label class="row center">
+                            <span>Printer:</span>
+                            <span id="print-printer-name" class="font-subheading" style="margin-left: 10px;"></span>
+                        </label>
+                    </div>
+                    <div class="row" style="margin-top: 10px;">
+                        <label class="row center">
+                            <span>Files:</span>
+                            <span id="print-file-count" class="font-body2" style="margin-left: 10px;"></span>
+                        </label>
+                    </div>
+                    <div class="row" style="margin-top: 15px;">
+                        <label class="row center">
+                            <span>Copies:</span>
+                            <input type="number" id="print-copies" min="1" max="99" value="1" style="margin-left: 10px; width: 60px;">
+                        </label>
+                    </div>
+                </div>
+                <div class="row-reverse center btn-row wrap">
+                    <button class="btn btn-rounded btn-primary" id="print-confirm-btn">Print</button>
+                    <button class="btn btn-rounded btn-grey" close>Cancel</button>
+                </div>
+            </x-paper>
+        </x-background>
+    </x-dialog>
     <!-- Toast -->
     <div class="toast-container full center">
         <x-toast id="toast" shadow="1">
@@ -748,6 +782,9 @@
         </symbol>
         <symbol id="notifications">
             <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"></path>
+        </symbol>
+        <symbol id="printer-icon" viewBox="0 0 24 24">
+            <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"></path>
         </symbol>
         <symbol id="homescreen">
             <path fill="none" d="M0 0h24v24H0V0z"></path>

@@ -178,7 +178,7 @@ const pairDropServer = new PairDropServer(conf);
 
 if (!conf.signalingServer) {
     // Start websocket server if SIGNALING_SERVER is not set
-    new PairDropWsServer(pairDropServer.server, conf);
+    new PairDropWsServer(pairDropServer.server, conf, pairDropServer.printerService);
 } else {
     console.log("This instance does not include a signaling server. Clients on this instance connect to the following signaling server:", conf.signalingServer);
 }

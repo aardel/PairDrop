@@ -11,8 +11,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@sealsystems/ipp": "^2.11.0",
+    "bonjour-service": "^1.2.1",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
+    "multer": "^2.0.2",
+    "pdf-lib": "^1.17.1",
+    "sharp": "^0.33.2",
     "ua-parser-js": "^1.0.37",
     "unique-names-generator": "^4.3.0",
     "ws": "^8.16.0"
