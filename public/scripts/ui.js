@@ -2642,8 +2642,12 @@ class PrintDialog extends Dialog {
 
         for (const file of this._printData.files) {
             try {
-                await this._printFile(file, copies);
-                Events.fire('notify-user', `Printing ${file.name}...`);
+                const result = await this._printFile(file, copies);
+                if (result && result.jobId) {
+                    Events.fire('notify-user', `Print job submitted: ${file.name} (Job: ${result.jobId})`);
+                } else {
+                    Events.fire('notify-user', `Print job sent: ${file.name}`);
+                }
             } catch (error) {
                 console.error('Print error:', error);
                 Events.fire('notify-user', `Failed to print ${file.name}: ${error.message}`);
@@ -2652,11 +2656,6 @@ class PrintDialog extends Dialog {
     }
 
     async _printFile(file, copies) {
-        // For images: use browser print dialog as fallback (IPP often doesn't support JPEG/PNG)
-        if (file.type.startsWith('image/')) {
-            return this._printImageViaBrowser(file, copies);
-        }
-        
         const formData = new FormData();
         formData.append('file', file);
         formData.append('printerId', this._printData.printerId);
@@ -2688,30 +2687,9 @@ class PrintDialog extends Dialog {
             throw new Error(errorMessage);
         }
 
-        return await response.json();
-    }
-
-    async _printImageViaBrowser(file, copies) {
-        // Open image in new window and use browser print dialog
-        return new Promise((resolve, reject) => {
-            const url = URL.createObjectURL(file);
-            const printWindow = window.open(url, '_blank');
-            
-            if (!printWindow) {
-                reject(new Error('Popup blocked. Allow popups to print images.'));
-                return;
-            }
-
-            printWindow.onload = () => {
-                printWindow.focus();
-                printWindow.print();
-                setTimeout(() => {
-                    printWindow.close();
-                    URL.revokeObjectURL(url);
-                    resolve({ success: true });
-                }, 1000);
-            };
-        });
+        const result = await response.json();
+        console.log('[Print] Server response:', result);
+        return result;
     }
 }
 

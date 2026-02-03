@@ -13,13 +13,25 @@ export class PWGRasterEncoder {
     static async encode(imageBuffer, options = {}) {
         const sharp = (await import('sharp')).default;
         
+        // Resize large images to max 4000px to avoid memory issues
+        const maxDimension = options.maxDimension || 4000;
+        
         // Get image metadata
-        const image = sharp(imageBuffer);
+        let image = sharp(imageBuffer);
         const metadata = await image.metadata();
         
-        // Convert to raw RGB
+        if (metadata.width > maxDimension || metadata.height > maxDimension) {
+            console.log(`Resizing image from ${metadata.width}x${metadata.height} for printer compatibility`);
+            image = image.resize(maxDimension, maxDimension, { 
+                fit: 'inside',
+                withoutEnlargement: true 
+            });
+        }
+        
+        // Convert to raw RGB (remove alpha channel if present)
         const { data, info } = await image
             .removeAlpha()
+            .ensureAlpha(0) // Ensure no alpha
             .raw()
             .toBuffer({ resolveWithObject: true });
         
@@ -35,10 +47,12 @@ export class PWGRasterEncoder {
     }
     
     static _buildPWGHeader(width, height, options = {}) {
+        // PWG Raster file format (RFC 6750)
+        // File header: 4-byte sync word + 1792-byte page header
         const buffer = Buffer.alloc(1796);
         let offset = 0;
         
-        // PWG Raster synchronization word
+        // PWG Raster synchronization word "RaS2" (0x52615332)
         buffer.write('RaS2', offset, 'ascii');
         offset += 4;
         

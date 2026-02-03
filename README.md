@@ -68,17 +68,21 @@ PRINT_MAX_FILE_SIZE=52428800 npm start  # 50MB
 
 #### Requirements
 
-- Network printers must support IPP (Internet Printing Protocol) or CUPS
+- Set `PRINTER_DISCOVERY=true` in your environment or use `npm run start:printers`
+- **Important**: On macOS, run with `npm start` on the host, NOT in Docker (Docker on Mac blocks mDNS from LAN)
 - Printers must be discoverable via mDNS/Bonjour on the network
-- The server must be able to access the network where printers are located
+- Printers must support IPP (Internet Printing Protocol) or be configured in CUPS
 
 #### How It Works
 
-1. **Discovery**: When enabled, PairDrop automatically scans the network for IPP-compatible printers using mDNS/Bonjour
+1. **Discovery**: When enabled, PairDrop scans the network for IPP-compatible printers using mDNS/Bonjour
 2. **Display**: Discovered printers appear as printer icons alongside peer devices
-3. **Print**: Drag and drop files onto printer icons or click to select files
+3. **Print**: Click printer icon to select files, or drag and drop files onto printer icons
 4. **Configuration**: Choose print options like number of copies before printing
-5. **Status**: Real-time updates show printer availability and job status
+5. **Processing**: On Mac/Linux, uses CUPS for format compatibility. On other platforms, converts images to PWG Raster format for universal printer support.
+6. **Status**: Real-time updates show printer availability and job status
+
+**Troubleshooting**: See [FAQ - No printers showing](docs/faq.md#no-printers-showing-especially-on-mac-or-in-docker) if printers don't appear.
 
 ## Differences to the [Snapdrop](https://github.com/RobinLinus/snapdrop) it is based on
 <details><summary>View all differences</summary>

@@ -2,7 +2,6 @@ import Bonjour from 'bonjour-service';
 import ipp from '@sealsystems/ipp';
 import { EventEmitter } from 'events';
 import crypto from 'crypto';
-import { parse as parseUrl } from 'url';
 import https from 'https';
 import { exec } from 'child_process';
 import fs from 'fs';
@@ -30,6 +29,7 @@ export default class PrinterService extends EventEmitter {
         this._enabled = process.env.PRINTER_DISCOVERY === "true";
         this._httpsAgent = new https.Agent({ rejectUnauthorized: false });
         this._cupsPrinters = new Map(); // Maps mDNS printer names to CUPS queue names
+        this._cupsPrinterQueues = []; // List of available CUPS queues
 
         if (this._enabled) {
             this._startDiscovery();
@@ -103,6 +103,13 @@ export default class PrinterService extends EventEmitter {
         this._printers.set(printerId, printerInfo);
 
         console.log('Printer discovered:', printerInfo.name, printerInfo.uri);
+        
+        // Try to map to CUPS queue
+        const cupsQueue = this._mapPrinterToCUPS(printerInfo);
+        if (cupsQueue) {
+            this._cupsPrinters.set(printerId, cupsQueue);
+            console.log('  Mapped to CUPS queue:', cupsQueue);
+        }
 
         // Fetch printer capabilities
         this._fetchPrinterCapabilities(printerInfo).then(() => {
@@ -135,13 +142,35 @@ export default class PrinterService extends EventEmitter {
                 const printerUri = printer.uri;
 
                 const msg = {
-                    "operation-attributes-tag": {
-                        "requesting-user-name": "PairDrop",
-                        "printer-uri": printerUri
+                    operation: 'Get-Printer-Attributes',
+                    'operation-attributes-tag': {
+                        'attributes-charset': 'utf-8',
+                        'attributes-natural-language': 'en',
+                        'printer-uri': printerUri,
+                        'requested-attributes': [
+                            'printer-state',
+                            'printer-state-reasons',
+                            'document-format-supported',
+                            'color-supported',
+                            'sides-supported',
+                            'media-supported'
+                        ]
                     }
                 };
 
-                ipp.request(printerUri, 'Get-Printer-Attributes', msg, (err, res) => {
+                const serialized = ipp.serialize(msg);
+                const urlObj = new URL(printerUri);
+                const opts = {
+                    protocol: urlObj.protocol,
+                    hostname: urlObj.hostname,
+                    port: urlObj.port || (urlObj.protocol === 'ipps:' ? 631 : 631),
+                    path: urlObj.pathname
+                };
+                if (printerUri.startsWith('ipps://')) {
+                    opts.agent = this._httpsAgent;
+                }
+
+                ipp.request(opts, serialized, (err, res) => {
                     if (err) {
                         if (err.message === 'Data required') {
                             // Some printers (e.g. EPSON L3250) return a response the library can't parse; treat as OK
@@ -160,6 +189,7 @@ export default class PrinterService extends EventEmitter {
                             colorSupported: attrs['color-supported']?.[0]?.value ?? false,
                             sidesSupported: attrs['sides-supported']?.[0]?.value ?? ['one-sided'],
                             mediaSupported: attrs['media-supported']?.[0]?.value ?? ['na_letter_8.5x11in'],
+                            documentFormatSupported: attrs['document-format-supported'] || ['application/octet-stream'],
                             printerState: attrs['printer-state']?.[0]?.value,
                             printerStateReasons: attrs['printer-state-reasons']?.[0]?.value
                         };
@@ -207,24 +237,17 @@ export default class PrinterService extends EventEmitter {
                     printer.online = true;
                     this.emit('printer-updated', printer);
                 } catch (err) {
-                    if (err.message !== 'Data required') {
-                        console.warn(`Printer ${printer.name} IPP status check failed, but keeping online (mDNS). Error:`, err.message);
-                    }
+                    // If "Data required", treat as online (EPSON quirk)
                     if (err.message === 'Data required') {
                         printer.lastSeen = now;
                         printer.online = true;
                         this.emit('printer-updated', printer);
                     } else {
-                        // Genuine connection error? Maybe offline. 
-                        // But for now, let's just Log and NOT update the status to offline immediately.
-                        // Let the timeout handle it if we stop seeing mDNS updates? 
-                        // (Wait, mDNS updates don't update lastSeen in this code...)
-
-                        // Fix: Update lastSeen in _onPrinterDiscovered if it's strictly a new discovery? 
-                        // Actually _onPrinterDiscovered checks `if (this._printers.has(printerId)) return;`
-                        // So it never updates lastSeen for existing printers!
-
-                        // We need to allow re-discovery to update lastSeen?
+                        // Don't mark offline immediately on IPP errors;
+                        // mDNS presence is sufficient. Only timeout marks offline.
+                        if (err.message !== 'Data required') {
+                            console.warn(`Printer ${printer.name} IPP check failed (keeping online via mDNS):`, err.message);
+                        }
                     }
                 }
             }
@@ -295,12 +318,18 @@ export default class PrinterService extends EventEmitter {
             }
 
             const doRequest = (uri, isRetry) => {
-                const url = parseUrl(uri);
+                const urlObj = new URL(uri);
+                const opts = {
+                    protocol: urlObj.protocol,
+                    hostname: urlObj.hostname,
+                    port: urlObj.port || 631,
+                    path: urlObj.pathname
+                };
                 if (uri.startsWith('ipps://')) {
-                    url.agent = this._httpsAgent;
+                    opts.agent = this._httpsAgent;
                 }
                 
-                ipp.request(url, serialized, (err, res) => {
+                ipp.request(opts, serialized, (err, res) => {
                     if (err) {
                         if (err.message === 'Data required') {
                             console.log('Print job sent to', printer.name, '(printer response not parsed)');
@@ -388,24 +417,57 @@ export default class PrinterService extends EventEmitter {
             
             // Parse output like "EPSON_L3250_Series_2 accepting requests since..."
             const lines = stdout.split('\n');
+            const cupsQueues = [];
             lines.forEach(line => {
                 const match = line.match(/^([^\s]+)\s+accepting/);
                 if (match) {
                     const cupsName = match[1];
-                    // Map will be populated when printers are discovered
+                    cupsQueues.push(cupsName);
                     console.log('  Found CUPS printer:', cupsName);
                 }
             });
+            
+            // Try to match CUPS queues to discovered printers later
+            this._cupsPrinterQueues = cupsQueues;
         });
+    }
+    
+    _mapPrinterToCUPS(printer) {
+        if (!this._cupsPrinterQueues) return null;
+        
+        // Try exact match first
+        const exactMatch = this._cupsPrinterQueues.find(q => 
+            q.toLowerCase() === printer.name.toLowerCase()
+        );
+        if (exactMatch) return exactMatch;
+        
+        // Try fuzzy match (remove spaces/special chars)
+        const normalizedName = printer.name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const fuzzyMatch = this._cupsPrinterQueues.find(q => 
+            q.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === normalizedName
+        );
+        if (fuzzyMatch) return fuzzyMatch;
+        
+        // Try partial match
+        const partialMatch = this._cupsPrinterQueues.find(q => 
+            q.toLowerCase().includes(printer.name.toLowerCase()) ||
+            printer.name.toLowerCase().includes(q.toLowerCase())
+        );
+        if (partialMatch) return partialMatch;
+        
+        return null;
     }
 
     async _submitPrintJobViaCUPS(printer, fileBuffer, fileName, options = {}) {
         return new Promise((resolve, reject) => {
             // Try to find CUPS queue name for this printer
-            let cupsName = this._cupsPrinters.get(printer.id);
+            let cupsName = this._mapPrinterToCUPS(printer);
             if (!cupsName) {
                 // Fallback: sanitize printer name to match likely CUPS queue name
                 cupsName = printer.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+                console.log('No CUPS queue match found, using sanitized name:', cupsName);
+            } else {
+                console.log('Matched to CUPS queue:', cupsName);
             }
             
             // Write to temp file
@@ -415,9 +477,9 @@ export default class PrinterService extends EventEmitter {
             const copies = options.copies || 1;
             const cmd = `lp -d "${cupsName}" -n ${copies} "${tempFile}"`;
             
-            console.log('Submitting via CUPS:', cupsName);
+            console.log('Submitting via CUPS to queue:', cupsName);
             
-            exec(cmd, (error, stdout, stderr) => {
+            exec(cmd, {timeout: 30000}, (error, stdout, stderr) => {
                 // Clean up temp file
                 try {
                     fs.unlinkSync(tempFile);
