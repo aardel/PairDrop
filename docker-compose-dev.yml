@@ -7,6 +7,7 @@ services:
     environment:
       - PUID=1000 # UID to run the application as
       - PGID=1000 # GID to run the application as
+      - PRINTER_DISCOVERY=true # Set to true to enable printer discovery.
       - WS_FALLBACK=false # Set to true to enable websocket fallback if the peer to peer WebRTC connection is not available to the client.
       - RATE_LIMIT=false # Set to true to limit clients to 1000 requests per 5 min.
       - RTC_CONFIG=false # Set to the path of a file that specifies the STUN/TURN servers.
@@ -30,5 +31,5 @@ services:
     environment:
       - FQDN=localhost
     entrypoint: /mnt/openssl/create.sh
-    command: ["nginx", "-g", "daemon off;"]
+    command: [ "nginx", "-g", "daemon off;" ]
     restart: unless-stopped

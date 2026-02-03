@@ -9,9 +9,9 @@ class ServerConnection {
         }
 
         Events.on('room-secrets', e => this.send({ type: 'room-secrets', roomSecrets: e.detail }));
-        Events.on('join-ip-room', _ => this.send({ type: 'join-ip-room'}));
-        Events.on('room-secrets-deleted', e => this.send({ type: 'room-secrets-deleted', roomSecrets: e.detail}));
-        Events.on('regenerate-room-secret', e => this.send({ type: 'regenerate-room-secret', roomSecret: e.detail}));
+        Events.on('join-ip-room', _ => this.send({ type: 'join-ip-room' }));
+        Events.on('room-secrets-deleted', e => this.send({ type: 'room-secrets-deleted', roomSecrets: e.detail }));
+        Events.on('regenerate-room-secret', e => this.send({ type: 'regenerate-room-secret', roomSecret: e.detail }));
         Events.on('pair-device-initiate', _ => this._onPairDeviceInitiate());
         Events.on('pair-device-join', e => this._onPairDeviceJoin(e.detail));
         Events.on('pair-device-cancel', _ => this.send({ type: 'pair-device-cancel' }));
@@ -22,6 +22,8 @@ class ServerConnection {
 
         Events.on('offline', _ => clearTimeout(this._reconnectTimer));
         Events.on('online', _ => this._connect());
+
+        Events.on('print-files', e => this._onPrintFiles(e.detail));
 
         this._getConfig().then(() => this._connect());
     }
@@ -187,6 +189,7 @@ class ServerConnection {
                 Events.fire('public-room-left');
                 break;
             case 'printers':
+                console.log('Printers list received:', (msg.printers || []).length, 'printer(s)');
                 Events.fire('printers', { printers: msg.printers });
                 break;
             case 'printer-joined':
@@ -353,10 +356,10 @@ class Peer {
     }
 
     // Is overwritten in expanding classes
-    _send(message) {}
+    _send(message) { }
 
     sendDisplayName(displayName) {
-        this.sendJSON({type: 'display-name-changed', displayName: displayName});
+        this.sendJSON({ type: 'display-name-changed', displayName: displayName });
     }
 
     _isSameBrowser() {
@@ -400,10 +403,10 @@ class Peer {
         this._roomIds[roomType] = roomId;
 
         if (!this._isSameBrowser()
-            &&  roomTypeIsSecret
-            &&  this._isPaired()
-            &&  this._regenerationOfPairSecretNeeded()
-            &&  this._isCaller) {
+            && roomTypeIsSecret
+            && this._isPaired()
+            && this._regenerationOfPairSecretNeeded()
+            && this._isCaller) {
             // increase security by initiating the increase of the roomSecret length
             // from 64 chars (<v1.7.0) to 256 chars (v1.7.0+)
             console.log('RoomSecret is regenerated to increase security')
@@ -449,8 +452,8 @@ class Peer {
         let header = [];
         let totalSize = 0;
         let imagesOnly = true
-        for (let i=0; i<files.length; i++) {
-            Events.fire('set-progress', {peerId: this._peerId, progress: 0.8*i/files.length, status: 'prepare'})
+        for (let i = 0; i < files.length; i++) {
+            Events.fire('set-progress', { peerId: this._peerId, progress: 0.8 * i / files.length, status: 'prepare' })
             header.push({
                 name: files[i].name,
                 mime: files[i].type,
@@ -460,7 +463,7 @@ class Peer {
             if (files[i].type.split('/')[0] !== 'image') imagesOnly = false;
         }
 
-        Events.fire('set-progress', {peerId: this._peerId, progress: 0.8, status: 'prepare'})
+        Events.fire('set-progress', { peerId: this._peerId, progress: 0.8, status: 'prepare' })
 
         let dataUrl = '';
         if (files[0].type.split('/')[0] === 'image') {
@@ -471,21 +474,22 @@ class Peer {
             }
         }
 
-        Events.fire('set-progress', {peerId: this._peerId, progress: 1, status: 'prepare'})
+        Events.fire('set-progress', { peerId: this._peerId, progress: 1, status: 'prepare' })
 
         this._filesRequested = files;
 
-        this.sendJSON({type: 'request',
+        this.sendJSON({
+            type: 'request',
             header: header,
             totalSize: totalSize,
             imagesOnly: imagesOnly,
             thumbnailDataUrl: dataUrl
         });
-        Events.fire('set-progress', {peerId: this._peerId, progress: 0, status: 'wait'})
+        Events.fire('set-progress', { peerId: this._peerId, progress: 0, status: 'wait' })
     }
 
     async sendFiles() {
-        for (let i=0; i<this._filesRequested.length; i++) {
+        for (let i = 0; i < this._filesRequested.length; i++) {
             this._filesQueue.push(this._filesRequested[i]);
         }
         this._filesRequested = null
@@ -572,13 +576,13 @@ class Peer {
     _onFilesTransferRequest(request) {
         if (this._requestPending) {
             // Only accept one request at a time per peer
-            this.sendJSON({type: 'files-transfer-response', accepted: false});
+            this.sendJSON({ type: 'files-transfer-response', accepted: false });
             return;
         }
-        if (window.iOS && request.totalSize >= 200*1024*1024) {
+        if (window.iOS && request.totalSize >= 200 * 1024 * 1024) {
             // iOS Safari can only put 400MB at once to memory.
             // Request to send them in chunks of 200MB instead:
-            this.sendJSON({type: 'files-transfer-response', accepted: false, reason: 'ios-memory-limit'});
+            this.sendJSON({ type: 'files-transfer-response', accepted: false, reason: 'ios-memory-limit' });
             return;
         }
 
@@ -598,7 +602,7 @@ class Peer {
     }
 
     _respondToFileTransferRequest(accepted) {
-        this.sendJSON({type: 'files-transfer-response', accepted: accepted});
+        this.sendJSON({ type: 'files-transfer-response', accepted: accepted });
         if (accepted) {
             this._requestAccepted = this._requestPending;
             this._totalBytesReceived = 0;
@@ -611,7 +615,7 @@ class Peer {
     _onFileHeader(header) {
         if (this._requestAccepted && this._requestAccepted.header.length) {
             this._lastProgress = 0;
-            this._digester = new FileDigester({size: header.size, name: header.name, mime: header.mime},
+            this._digester = new FileDigester({ size: header.size, name: header.name, mime: header.mime },
                 this._requestAccepted.totalSize,
                 this._totalBytesReceived,
                 fileBlob => this._onFileReceived(fileBlob)
@@ -620,7 +624,7 @@ class Peer {
     }
 
     _abortTransfer() {
-        Events.fire('set-progress', {peerId: this._peerId, progress: 1, status: 'wait'});
+        Events.fire('set-progress', { peerId: this._peerId, progress: 1, status: 'wait' });
         Events.fire('notify-user', Localization.getTranslation("notifications.files-incorrect"));
         this._filesReceived = [];
         this._requestAccepted = null;
@@ -629,7 +633,7 @@ class Peer {
     }
 
     _onChunkReceived(chunk) {
-        if(!this._digester || !(chunk.byteLength || chunk.size)) return;
+        if (!this._digester || !(chunk.byteLength || chunk.size)) return;
 
         this._digester.unchunk(chunk);
         const progress = this._digester.progress;
@@ -647,14 +651,14 @@ class Peer {
     }
 
     _onDownloadProgress(progress) {
-        Events.fire('set-progress', {peerId: this._peerId, progress: progress, status: 'transfer'});
+        Events.fire('set-progress', { peerId: this._peerId, progress: progress, status: 'transfer' });
     }
 
     async _onFileReceived(fileBlob) {
         const acceptedHeader = this._requestAccepted.header.shift();
         this._totalBytesReceived += fileBlob.size;
 
-        this.sendJSON({type: 'file-transfer-complete'});
+        this.sendJSON({ type: 'file-transfer-complete' });
 
         const sameSize = fileBlob.size === acceptedHeader.size;
         const sameName = fileBlob.name === acceptedHeader.name
@@ -668,8 +672,8 @@ class Peer {
         this._filesReceived.push(fileBlob);
         if (!this._requestAccepted.header.length) {
             this._busy = false;
-            Events.fire('set-progress', {peerId: this._peerId, progress: 0, status: 'process'});
-            Events.fire('files-received', {peerId: this._peerId, files: this._filesReceived, imagesOnly: this._requestAccepted.imagesOnly, totalSize: this._requestAccepted.totalSize});
+            Events.fire('set-progress', { peerId: this._peerId, progress: 0, status: 'process' });
+            Events.fire('files-received', { peerId: this._peerId, files: this._filesReceived, imagesOnly: this._requestAccepted.imagesOnly, totalSize: this._requestAccepted.totalSize });
             this._filesReceived = [];
             this._requestAccepted = null;
         }
@@ -689,7 +693,7 @@ class Peer {
 
     _onFileTransferRequestResponded(message) {
         if (!message.accepted) {
-            Events.fire('set-progress', {peerId: this._peerId, progress: 1, status: 'wait'});
+            Events.fire('set-progress', { peerId: this._peerId, progress: 1, status: 'wait' });
             this._filesRequested = null;
             if (message.reason === 'ios-memory-limit') {
                 Events.fire('notify-user', Localization.getTranslation("notifications.ios-memory-limit"));
@@ -697,7 +701,7 @@ class Peer {
             return;
         }
         Events.fire('file-transfer-accepted');
-        Events.fire('set-progress', {peerId: this._peerId, progress: 0, status: 'transfer'});
+        Events.fire('set-progress', { peerId: this._peerId, progress: 0, status: 'transfer' });
         this.sendFiles();
     }
 
@@ -724,10 +728,44 @@ class Peer {
             this._displayName = message.displayName;
         }
 
-        Events.fire('peer-display-name-changed', {peerId: this._peerId, displayName: message.displayName});
+        Events.fire('peer-display-name-changed', { peerId: this._peerId, displayName: message.displayName });
 
         if (!displayNameHasChanged) return;
         Events.fire('notify-peer-display-name-changed', this._peerId);
+    }
+
+    async _onPrintFiles(detail) {
+        if (!this._isConnected()) {
+            Events.fire('notify-user', Localization.getTranslation("notifications.offline"));
+            return;
+        }
+
+        const printerId = detail.printerId;
+        const files = detail.files;
+
+        if (files.length === 0) return;
+
+        // Currently only support single file print for simplicity
+        const file = files[0];
+
+        Events.fire('notify-user', `Sending ${file.name} to printer...`);
+
+        // Read file as ArrayBuffer
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const buffer = e.target.result;
+
+            // Send print job request
+            this.send({
+                type: 'print-job',
+                printerId: printerId,
+                fileName: file.name,
+                fileType: file.type,
+                fileSize: file.size,
+                data: buffer // This might need chunking for large files, keeping it simple for now
+            });
+        };
+        reader.readAsArrayBuffer(file);
     }
 }
 
@@ -822,7 +860,7 @@ class RTCPeer extends Peer {
         this._channel = channel;
         Events.on('beforeunload', e => this._onBeforeUnload(e));
         Events.on('pagehide', _ => this._onPageHide());
-        Events.fire('peer-connected', {peerId: this._peerId, connectionHash: this.getConnectionHash()});
+        Events.fire('peer-connected', { peerId: this._peerId, connectionHash: this.getConnectionHash() });
     }
 
     _onMessage(message) {
@@ -836,13 +874,13 @@ class RTCPeer extends Peer {
         const localDescriptionLines = this._conn.localDescription.sdp.split("\r\n");
         const remoteDescriptionLines = this._conn.remoteDescription.sdp.split("\r\n");
         let localConnectionFingerprint, remoteConnectionFingerprint;
-        for (let i=0; i<localDescriptionLines.length; i++) {
+        for (let i = 0; i < localDescriptionLines.length; i++) {
             if (localDescriptionLines[i].startsWith("a=fingerprint:")) {
                 localConnectionFingerprint = localDescriptionLines[i].substring(14);
                 break;
             }
         }
-        for (let i=0; i<remoteDescriptionLines.length; i++) {
+        for (let i = 0; i < remoteDescriptionLines.length; i++) {
             if (remoteDescriptionLines[i].startsWith("a=fingerprint:")) {
                 remoteConnectionFingerprint = remoteDescriptionLines[i].substring(14);
                 break;
@@ -909,7 +947,12 @@ class RTCPeer extends Peer {
     }
 
     _onError(error) {
-        console.error(error);
+        // ICE candidate errors are common (e.g. IPv6 STUN failure) and usually harmless; PairDrop falls back to WebSocket
+        if (error?.constructor?.name === 'RTCPeerConnectionIceErrorEvent') {
+            console.warn('ICE candidate error (often harmless):', error.errorText || error.message || error);
+        } else {
+            console.error(error);
+        }
     }
 
     _send(message) {
@@ -975,12 +1018,12 @@ class WSPeer extends Peer {
     }
 
     _sendSignal(connected = false) {
-        this.sendJSON({type: 'signal', connected: connected});
+        this.sendJSON({ type: 'signal', connected: connected });
     }
 
     onServerMessage(message) {
         this._peerId = message.sender.id;
-        Events.fire('peer-connected', {peerId: message.sender.id, connectionHash: this.getConnectionHash()})
+        Events.fire('peer-connected', { peerId: message.sender.id, connectionHash: this.getConnectionHash() })
         if (message.connected) return;
         this._sendSignal(true);
     }
@@ -1156,7 +1199,7 @@ class PeersManager {
     }
 
     _onRoomSecretsDeleted(roomSecrets) {
-        for (let i=0; i<roomSecrets.length; i++) {
+        for (let i = 0; i < roomSecrets.length; i++) {
             this._disconnectOrRemoveRoomTypeByRoomId('secret', roomSecrets[i]);
         }
     }
@@ -1174,7 +1217,7 @@ class PeersManager {
 
         if (!peerIds.length) return;
 
-        for (let i=0; i<peerIds.length; i++) {
+        for (let i = 0; i < peerIds.length; i++) {
             this._disconnectOrRemoveRoomTypeByPeerId(peerIds[i], roomType);
         }
     }

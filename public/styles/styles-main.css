@@ -1115,3 +1115,71 @@ See note here: https://developer.mozilla.org/en-US/docs/Web/CSS/user-select */
     user-select: text;
 }
 
+/* Printer */
+
+x-printer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: var(--peer-width);
+    margin: 8px;
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+x-printer:hover {
+    transform: scale(1.05);
+}
+
+x-printer label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+}
+
+x-printer .icon-wrapper {
+    width: var(--icon-size);
+    height: var(--icon-size);
+    border-radius: 50%;
+    background-color: var(--bg-color-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.3s;
+}
+
+x-printer:hover .icon-wrapper {
+    background-color: var(--bg-hover-color);
+}
+
+x-printer .device-descriptor {
+    margin-top: 8px;
+    text-align: center;
+}
+
+x-printer .name {
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+x-printer .status {
+    margin-top: 2px;
+}
+
+x-printer .status.online {
+    color: var(--success-color);
+}
+
+x-printer .status.offline {
+    color: var(--error-color);
+}
+
+/* Printer Status Colors */
+:root {
+    --printer-online-color: #4CAF50;
+    --printer-busy-color: #FFC107;
+    --printer-error-color: #F44336;
+}

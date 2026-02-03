@@ -1,8 +1,8 @@
-import {WebSocketServer} from "ws";
+import { WebSocketServer } from "ws";
 import crypto from "crypto"
 
 import Peer from "./peer.js";
-import {hasher, randomizer} from "./helper.js";
+import { hasher, randomizer } from "./helper.js";
 
 export default class PairDropWsServer {
 
@@ -149,6 +149,9 @@ export default class PairDropWsServer {
             case 'leave-public-room':
                 this._onLeavePublicRoom(sender);
                 break;
+            case 'print-job':
+                this._onPrintJob(sender, message);
+                break;
             case 'signal':
                 this._signalAndRelay(sender, message);
                 break;
@@ -222,7 +225,7 @@ export default class PairDropWsServer {
     }
 
     _onRoomSecretsDeleted(sender, message) {
-        for (let i = 0; i<message.roomSecrets.length; i++) {
+        for (let i = 0; i < message.roomSecrets.length; i++) {
             this._deleteSecretRoom(message.roomSecrets[i]);
         }
     }
@@ -348,6 +351,40 @@ export default class PairDropWsServer {
         delete this._rooms[oldRoomSecret];
     }
 
+    async _onPrintJob(sender, message) {
+        if (!this._printerService.isEnabled()) return;
+
+        try {
+            // Buffer comes as a JSON object {type: 'Buffer', data: [...]}, need to convert
+            const fileBuffer = Buffer.from(message.data);
+
+            console.log(`Received print job from ${sender.id}: ${message.fileName} (${message.fileSize} bytes)`);
+
+            const result = await this._printerService.submitPrintJob(
+                message.printerId,
+                fileBuffer,
+                message.fileName,
+                {
+                    userName: sender.name.displayName,
+                    mimeType: message.fileType // e.g. 'application/pdf' or 'image/jpeg'
+                }
+            );
+
+            this._send(sender, {
+                type: 'print-job-success',
+                jobId: result.jobId,
+                status: result.jobState
+            });
+
+        } catch (err) {
+            console.error('Print job error:', err);
+            this._send(sender, {
+                type: 'print-job-error',
+                error: err.message
+            });
+        }
+    }
+
     _createPairKey(creator, roomSecret) {
         let pairKey;
         do {
@@ -406,6 +443,11 @@ export default class PairDropWsServer {
 
         // add peer to room
         this._rooms[roomId][peer.id] = peer;
+
+        // Send current printer list so client sees printers even if it missed printer-joined (e.g. connected before joining a room)
+        if (this._printerService.isEnabled()) {
+            this._sendPrinters(peer);
+        }
     }
 
 
@@ -492,13 +534,13 @@ export default class PairDropWsServer {
     }
 
     _joinSecretRooms(peer, roomSecrets) {
-        for (let i=0; i<roomSecrets.length; i++) {
+        for (let i = 0; i < roomSecrets.length; i++) {
             this._joinSecretRoom(peer, roomSecrets[i])
         }
     }
 
     _leaveAllSecretRooms(peer, disconnect = false) {
-        for (let i=0; i<peer.roomSecrets.length; i++) {
+        for (let i = 0; i < peer.roomSecrets.length; i++) {
             this._leaveSecretRoom(peer, peer.roomSecrets[i], disconnect);
         }
     }

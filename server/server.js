@@ -99,6 +99,8 @@ export default class PairDropServer {
                     return res.status(404).json({ error: 'Printer not found' });
                 }
 
+                console.log('Print job:', file.originalname, '->', printer.name);
+
                 // Parse print options
                 const options = {
                     copies: parseInt(req.body.copies) || 1,

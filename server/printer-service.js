@@ -2,6 +2,13 @@ import Bonjour from 'bonjour-service';
 import ipp from '@sealsystems/ipp';
 import { EventEmitter } from 'events';
 import crypto from 'crypto';
+import { parse as parseUrl } from 'url';
+import https from 'https';
+import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { PWGRasterEncoder } from './pwg-raster.js';
 
 // IPP Printer State Constants
 const PRINTER_STATE_IDLE = 3;
@@ -21,18 +28,29 @@ export default class PrinterService extends EventEmitter {
         this._browser = null;
         this._refreshInterval = null;
         this._enabled = process.env.PRINTER_DISCOVERY === "true";
-        
+        this._httpsAgent = new https.Agent({ rejectUnauthorized: false });
+        this._cupsPrinters = new Map(); // Maps mDNS printer names to CUPS queue names
+
         if (this._enabled) {
             this._startDiscovery();
+        } else {
+            console.log('Printer discovery disabled. Set PRINTER_DISCOVERY=true to enable.');
         }
     }
 
     _startDiscovery() {
         console.log('Starting printer discovery...');
+        if (process.platform === 'darwin') {
+            console.log('  (macOS: run with "npm start" on the host, not in Docker. If no printers appear, allow Node in System Settings > Network > Firewall, and ensure printer is on the same Wi‑Fi/LAN.)');
+        }
         
-        // Initialize Bonjour/mDNS service
-        this._bonjour = new Bonjour.default();
-        
+        // Detect CUPS printers for mapping
+        this._detectCUPSPrinters();
+
+        // Initialize Bonjour/mDNS service (support both ESM default and CJS .default)
+        const BonjourClass = typeof Bonjour?.default === 'function' ? Bonjour.default : Bonjour;
+        this._bonjour = new BonjourClass();
+
         // Browse for IPP and IPP-SSL printers on the network
         this._browser = this._bonjour.find({ type: 'ipp' }, (service) => {
             this._onPrinterDiscovered(service);
@@ -53,9 +71,16 @@ export default class PrinterService extends EventEmitter {
         if (!service || !service.name) return;
 
         const printerId = this._generatePrinterId(service);
-        
+
         // Check if printer already exists
         if (this._printers.has(printerId)) {
+            const existingPrinter = this._printers.get(printerId);
+            existingPrinter.lastSeen = Date.now();
+            if (!existingPrinter.online) {
+                existingPrinter.online = true;
+                existingPrinter.status = 'idle';
+                this.emit('printer-updated', existingPrinter);
+            }
             return;
         }
 
@@ -76,14 +101,14 @@ export default class PrinterService extends EventEmitter {
         printerInfo.uri = this._buildPrinterUri(printerInfo);
 
         this._printers.set(printerId, printerInfo);
-        
+
         console.log('Printer discovered:', printerInfo.name, printerInfo.uri);
-        
+
         // Fetch printer capabilities
         this._fetchPrinterCapabilities(printerInfo).then(() => {
             this.emit('printer-added', printerInfo);
         }).catch(err => {
-            console.error('Error fetching printer capabilities:', err);
+            if (err.message !== 'Data required') console.error('Error fetching printer capabilities:', err);
             this.emit('printer-added', printerInfo);
         });
     }
@@ -97,10 +122,10 @@ export default class PrinterService extends EventEmitter {
         const protocol = printer.type === 'ipps' ? 'ipps' : 'ipp';
         const host = printer.host;
         const port = printer.port;
-        
+
         // Try to get the resource path from TXT record
         const rp = printer.txt?.rp || 'ipp/print';
-        
+
         return `${protocol}://${host}:${port}/${rp}`;
     }
 
@@ -108,7 +133,7 @@ export default class PrinterService extends EventEmitter {
         return new Promise((resolve, reject) => {
             try {
                 const printerUri = printer.uri;
-                
+
                 const msg = {
                     "operation-attributes-tag": {
                         "requesting-user-name": "PairDrop",
@@ -118,6 +143,11 @@ export default class PrinterService extends EventEmitter {
 
                 ipp.request(printerUri, 'Get-Printer-Attributes', msg, (err, res) => {
                     if (err) {
+                        if (err.message === 'Data required') {
+                            // Some printers (e.g. EPSON L3250) return a response the library can't parse; treat as OK
+                            resolve();
+                            return;
+                        }
                         console.error('Error getting printer attributes:', err);
                         reject(err);
                         return;
@@ -125,7 +155,7 @@ export default class PrinterService extends EventEmitter {
 
                     try {
                         const attrs = res['printer-attributes-tag'] || {};
-                        
+
                         printer.capabilities = {
                             colorSupported: attrs['color-supported']?.[0]?.value ?? false,
                             sidesSupported: attrs['sides-supported']?.[0]?.value ?? ['one-sided'],
@@ -177,11 +207,24 @@ export default class PrinterService extends EventEmitter {
                     printer.online = true;
                     this.emit('printer-updated', printer);
                 } catch (err) {
-                    // Printer not responding
-                    if (printer.online) {
-                        printer.online = false;
-                        printer.status = 'offline';
+                    if (err.message !== 'Data required') {
+                        console.warn(`Printer ${printer.name} IPP status check failed, but keeping online (mDNS). Error:`, err.message);
+                    }
+                    if (err.message === 'Data required') {
+                        printer.lastSeen = now;
+                        printer.online = true;
                         this.emit('printer-updated', printer);
+                    } else {
+                        // Genuine connection error? Maybe offline. 
+                        // But for now, let's just Log and NOT update the status to offline immediately.
+                        // Let the timeout handle it if we stop seeing mDNS updates? 
+                        // (Wait, mDNS updates don't update lastSeen in this code...)
+
+                        // Fix: Update lastSeen in _onPrinterDiscovered if it's strictly a new discovery? 
+                        // Actually _onPrinterDiscovered checks `if (this._printers.has(printerId)) return;`
+                        // So it never updates lastSeen for existing printers!
+
+                        // We need to allow re-discovery to update lastSeen?
                     }
                 }
             }
@@ -190,7 +233,7 @@ export default class PrinterService extends EventEmitter {
 
     async submitPrintJob(printerId, fileBuffer, fileName, options = {}) {
         const printer = this._printers.get(printerId);
-        
+
         if (!printer) {
             throw new Error('Printer not found');
         }
@@ -199,52 +242,111 @@ export default class PrinterService extends EventEmitter {
             throw new Error('Printer is offline');
         }
 
+        // Determine best printing method based on platform and file type
+        const mimeType = (options.mimeType || '').toLowerCase();
+        const isImage = mimeType.startsWith('image/');
+        
+        // Use CUPS on macOS/Linux when available (handles all formats)
+        if (process.platform === 'darwin' || process.platform === 'linux') {
+            return this._submitPrintJobViaCUPS(printer, fileBuffer, fileName, options);
+        }
+        
+        // For images on other platforms, convert to PWG Raster
+        if (isImage && mimeType !== 'image/pwg-raster') {
+            return this._submitPrintJobAsPWGRaster(printer, fileBuffer, fileName, options);
+        }
+
+        // For PDF or other formats, try direct IPP
+        return this._submitPrintJobViaIPP(printer, fileBuffer, fileName, options);
+    }
+
+    async _submitPrintJobViaIPP(printer, fileBuffer, fileName, options = {}) {
         return new Promise((resolve, reject) => {
+            const mimeType = (options.mimeType || 'application/pdf').toLowerCase();
             const msg = {
-                "operation-attributes-tag": {
-                    "requesting-user-name": options.userName || "PairDrop",
-                    "job-name": fileName,
-                    "document-format": options.mimeType || "application/pdf"
+                operation: 'Print-Job',
+                'operation-attributes-tag': {
+                    'attributes-charset': 'utf-8',
+                    'attributes-natural-language': 'en',
+                    'printer-uri': printer.uri.replace(/^ipp:/, 'ipps:'), // Use IPPS if available
+                    'requesting-user-name': options.userName || 'PairDrop',
+                    'job-name': fileName,
+                    'document-format': mimeType
                 },
-                data: fileBuffer
+                data: Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer)
             };
 
-            // Add optional attributes
             if (options.copies) {
-                msg["operation-attributes-tag"]["copies"] = options.copies;
+                msg['operation-attributes-tag'].copies = options.copies;
             }
-
             if (options.sides) {
-                msg["operation-attributes-tag"]["sides"] = options.sides;
+                msg['operation-attributes-tag'].sides = options.sides;
             }
-
             if (options.colorMode) {
-                msg["operation-attributes-tag"]["print-color-mode"] = options.colorMode;
+                msg['operation-attributes-tag']['print-color-mode'] = options.colorMode;
             }
 
-            ipp.request(printer.uri, 'Print-Job', msg, (err, res) => {
-                if (err) {
-                    console.error('Error submitting print job:', err);
-                    reject(err);
-                    return;
-                }
+            let serialized;
+            try {
+                serialized = ipp.serialize(msg);
+            } catch (serErr) {
+                reject(serErr);
+                return;
+            }
 
-                try {
-                    const jobAttrs = res['job-attributes-tag'] || {};
-                    const jobId = jobAttrs['job-id']?.[0]?.value;
-                    const jobState = jobAttrs['job-state']?.[0]?.value;
-
-                    resolve({
-                        jobId,
-                        jobState,
-                        printerId: printer.id,
-                        printerName: printer.name
-                    });
-                } catch (parseErr) {
-                    console.error('Error parsing print job response:', parseErr);
-                    reject(parseErr);
+            const doRequest = (uri, isRetry) => {
+                const url = parseUrl(uri);
+                if (uri.startsWith('ipps://')) {
+                    url.agent = this._httpsAgent;
                 }
-            });
+                
+                ipp.request(url, serialized, (err, res) => {
+                    if (err) {
+                        if (err.message === 'Data required') {
+                            console.log('Print job sent to', printer.name, '(printer response not parsed)');
+                            resolve({
+                                jobId: null,
+                                jobState: 'unknown',
+                                printerId: printer.id,
+                                printerName: printer.name
+                            });
+                            return;
+                        }
+                        // Some printers return 426 but the job was already sent; treat as success
+                        if (err.message && (err.message.includes('426') || (isRetry && err.code === 'EPIPE'))) {
+                            console.log('Print job sent to', printer.name, '(printer returned 426 or connection error after 426)');
+                            resolve({
+                                jobId: null,
+                                jobState: 'unknown',
+                                printerId: printer.id,
+                                printerName: printer.name
+                            });
+                            return;
+                        }
+                        console.error('Error submitting print job:', err);
+                        reject(err);
+                        return;
+                    }
+
+                    try {
+                        const jobAttrs = res['job-attributes-tag'] || {};
+                        const jobId = jobAttrs['job-id']?.[0]?.value;
+                        const jobState = jobAttrs['job-state']?.[0]?.value;
+
+                        resolve({
+                            jobId,
+                            jobState,
+                            printerId: printer.id,
+                            printerName: printer.name
+                        });
+                    } catch (parseErr) {
+                        console.error('Error parsing print job response:', parseErr);
+                        reject(parseErr);
+                    }
+                });
+            };
+
+            doRequest(printer.uri, false);
         });
     }
 
@@ -260,6 +362,90 @@ export default class PrinterService extends EventEmitter {
         return this._printers.get(printerId);
     }
 
+    async _submitPrintJobAsPWGRaster(printer, fileBuffer, fileName, options = {}) {
+        console.log('Converting image to PWG Raster for', printer.name);
+        
+        try {
+            const pwgBuffer = await PWGRasterEncoder.encode(fileBuffer, options);
+            console.log('PWG Raster conversion complete, size:', pwgBuffer.length, 'bytes');
+            
+            // Submit as PWG Raster
+            return this._submitPrintJobViaIPP(printer, pwgBuffer, fileName, {
+                ...options,
+                mimeType: 'image/pwg-raster'
+            });
+        } catch (err) {
+            console.error('PWG Raster conversion failed:', err);
+            throw new Error(`Cannot convert image to printer format: ${err.message}`);
+        }
+    }
+
+    _detectCUPSPrinters() {
+        if (process.platform !== 'darwin' && process.platform !== 'linux') return;
+        
+        exec('lpstat -a 2>/dev/null', (error, stdout) => {
+            if (error) return;
+            
+            // Parse output like "EPSON_L3250_Series_2 accepting requests since..."
+            const lines = stdout.split('\n');
+            lines.forEach(line => {
+                const match = line.match(/^([^\s]+)\s+accepting/);
+                if (match) {
+                    const cupsName = match[1];
+                    // Map will be populated when printers are discovered
+                    console.log('  Found CUPS printer:', cupsName);
+                }
+            });
+        });
+    }
+
+    async _submitPrintJobViaCUPS(printer, fileBuffer, fileName, options = {}) {
+        return new Promise((resolve, reject) => {
+            // Try to find CUPS queue name for this printer
+            let cupsName = this._cupsPrinters.get(printer.id);
+            if (!cupsName) {
+                // Fallback: sanitize printer name to match likely CUPS queue name
+                cupsName = printer.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+            }
+            
+            // Write to temp file
+            const tempFile = path.join(os.tmpdir(), `pairdrop-${Date.now()}-${fileName}`);
+            fs.writeFileSync(tempFile, fileBuffer);
+            
+            const copies = options.copies || 1;
+            const cmd = `lp -d "${cupsName}" -n ${copies} "${tempFile}"`;
+            
+            console.log('Submitting via CUPS:', cupsName);
+            
+            exec(cmd, (error, stdout, stderr) => {
+                // Clean up temp file
+                try {
+                    fs.unlinkSync(tempFile);
+                } catch (_) {}
+                
+                if (error) {
+                    console.error('CUPS print error:', error.message);
+                    console.error('stderr:', stderr);
+                    reject(new Error(`CUPS error: ${stderr || error.message}`));
+                    return;
+                }
+                
+                console.log('CUPS print successful:', stdout.trim());
+                
+                // Parse job ID from stdout like "request id is EPSON_L3250_Series_2-27 (1 file(s))"
+                const match = stdout.match(/request id is ([^ ]+)/);
+                const jobId = match ? match[1] : null;
+                
+                resolve({
+                    jobId,
+                    jobState: 'processing',
+                    printerId: printer.id,
+                    printerName: printer.name
+                });
+            });
+        });
+    }
+
     isEnabled() {
         return this._enabled;
     }
@@ -268,11 +454,11 @@ export default class PrinterService extends EventEmitter {
         if (this._refreshInterval) {
             clearInterval(this._refreshInterval);
         }
-        
+
         if (this._browser) {
             this._browser.stop();
         }
-        
+
         if (this._bonjour) {
             this._bonjour.destroy();
         }

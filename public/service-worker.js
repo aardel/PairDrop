@@ -1,4 +1,4 @@
-const cacheVersion = 'v1.11.2';
+const cacheVersion = 'v1.11.2-printer-api-fix';
 const cacheTitle = `pairdrop-cache-${cacheVersion}`;
 const relativePathsToCache = [
     './',
@@ -68,12 +68,12 @@ const relativePathsNotToCache = [
     'config'
 ]
 
-self.addEventListener('install', function(event) {
+self.addEventListener('install', function (event) {
     // Perform install steps
     console.log("Cache files for sw:", cacheVersion);
     event.waitUntil(
         caches.open(cacheTitle)
-            .then(function(cache) {
+            .then(function (cache) {
                 return cache
                     .addAll(relativePathsToCache)
                     .then(_ => {
@@ -88,7 +88,7 @@ self.addEventListener('install', function(event) {
 const fromNetwork = (request, timeout) =>
     new Promise((resolve, reject) => {
         const timeoutId = setTimeout(reject, timeout);
-        fetch(request, {cache: "no-store"})
+        fetch(request, { cache: "no-store" })
             .then(response => {
                 if (response.redirected) {
                     throw new Error("Fetch is redirect. Abort usage and cache!");
@@ -132,7 +132,7 @@ const updateCache = request => new Promise((resolve, reject) => {
     caches
         .open(cacheTitle)
         .then(cache =>
-            fetch(request, {cache: "no-store"})
+            fetch(request, { cache: "no-store" })
                 .then(response => {
                     if (response.redirected) {
                         throw new Error("Fetch is redirect. Abort usage and cache!");
@@ -150,7 +150,7 @@ const updateCache = request => new Promise((resolve, reject) => {
 // 1. Try to retrieve file from cache
 // 2. If cache is not available: Fetch from network and update cache.
 // This way, cached files are only updated if the cacheVersion is changed
-self.addEventListener('fetch', function(event) {
+self.addEventListener('fetch', function (event) {
     const swOrigin = new URL(self.location.href).origin;
     const requestOrigin = new URL(event.request.url).origin;
 
@@ -159,11 +159,17 @@ self.addEventListener('fetch', function(event) {
         event.respondWith(fetch(event.request));
     }
     else if (event.request.method === "POST") {
-        // Requests related to Web Share Target.
-        event.respondWith((async () => {
-            const share_url = await evaluateRequestData(event.request);
-            return Response.redirect(encodeURI(share_url), 302);
-        })());
+        const url = new URL(event.request.url);
+        // Skip API endpoints (e.g. /api/print)
+        if (url.pathname.startsWith('/api/')) {
+            event.respondWith(fetch(event.request));
+        } else {
+            // Requests related to Web Share Target.
+            event.respondWith((async () => {
+                const share_url = await evaluateRequestData(event.request);
+                return Response.redirect(encodeURI(share_url), 302);
+            })());
+        }
     }
     else {
         // Regular requests not related to Web Share Target:
@@ -221,7 +227,7 @@ const evaluateRequestData = function (request) {
 
         if (files && files.length > 0) {
             let fileObjects = [];
-            for (let i=0; i<files.length; i++) {
+            for (let i = 0; i < files.length; i++) {
                 fileObjects.push({
                     name: files[i].name,
                     buffer: await files[i].arrayBuffer()

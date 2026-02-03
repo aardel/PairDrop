@@ -6,6 +6,7 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
+    "start:printers": "PRINTER_DISCOVERY=true node server/index.js",
     "start:prod": "node server/index.js --rate-limit --auto-restart"
   },
   "author": "",

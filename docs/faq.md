@@ -261,6 +261,29 @@ and/or *Thinking, Fast and Slow* to learn more.
 
 <details>
 <summary style="font-size:1.25em;margin-top: 24px; margin-bottom: 16px; font-weight: var(--base-text-weight-semibold, 600); line-height: 1.25;">
+    No printers showing (especially on Mac or in Docker)?
+</summary>
+
+<br>
+
+Printer discovery uses **mDNS/Bonjour** (UDP multicast). It can be blocked in two common cases:
+
+**1. Running in Docker on macOS**  
+Containers on Docker for Mac do not receive mDNS traffic from your LAN, so printers on your network are not visible inside the container.  
+→ **Fix:** Run PairDrop with Node on the host instead of in Docker, e.g. `PRINTER_DISCOVERY=true npm start`.
+
+**2. macOS firewall or network**  
+If you run Node directly on the Mac, ensure:
+- The Mac and the printer are on the same Wi‑Fi or LAN.
+- In **System Settings > Network > Firewall**: either turn the firewall off for testing, or add Node / Terminal and allow incoming connections if required.
+- The printer supports IPP and advertises itself via mDNS (e.g. AirPrint, or “IPP” in the printer manual).
+
+<br>
+
+</details>
+
+<details>
+<summary style="font-size:1.25em;margin-top: 24px; margin-bottom: 16px; font-weight: var(--base-text-weight-semibold, 600); line-height: 1.25;">
     How does it work?
 </summary>
 
